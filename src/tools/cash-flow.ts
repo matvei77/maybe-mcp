@@ -3,7 +3,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
-import { formatCurrency, formatDate, formatPercentage } from "../utils/formatters.js";
+import { formatCurrency, formatPercentage } from "../utils/formatters.js";
 import { parseAmount, getAccountId } from "../utils/parsers.js";
 import { IdSchema } from "../utils/validators.js";
 

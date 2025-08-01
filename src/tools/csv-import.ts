@@ -386,8 +386,8 @@ function analyzePatterns(data: CSVRow[], mapping: any): any {
 async function processRow(
   row: CSVRow, 
   mapping: any,
-  params: z.infer<typeof ImportCSVSchema>,
-  existingTransactions: Transaction[]
+  _params: z.infer<typeof ImportCSVSchema>,
+  _existingTransactions: Transaction[]
 ): Promise<any> {
   const transaction: any = {};
 

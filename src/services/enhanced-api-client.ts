@@ -1,5 +1,4 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
-import { z } from 'zod';
 
 // Simple in-memory cache implementation
 class SimpleCache {

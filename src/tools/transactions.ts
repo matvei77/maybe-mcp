@@ -2,10 +2,10 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
-import { formatCurrency, formatDate } from "../utils/formatters.js";
+import { formatCurrency } from "../utils/formatters.js";
 import { PaginationSchema, IdSchema } from "../utils/validators.js";
 import { parseDate, formatDateForAPI } from "../utils/date-utils.js";
-import { parseAmount, getAccountId } from "../utils/parsers.js";
+import { parseAmount } from "../utils/parsers.js";
 
 const GetTransactionsSchema = z.object({
   accountId: IdSchema.optional(),
@@ -151,7 +151,7 @@ export function registerTransactionTools(server: Server, apiClient: MaybeFinance
         let filteredTransactions = transactions;
         if (params.minAmount !== undefined || params.maxAmount !== undefined) {
           filteredTransactions = transactions.filter((tx: Transaction) => {
-            const amount = Math.abs(parseFloat(tx.amount));
+            const amount = Math.abs(parseAmount(tx.amount));
             if (params.minAmount !== undefined && amount < params.minAmount) return false;
             if (params.maxAmount !== undefined && amount > params.maxAmount) return false;
             return true;

@@ -333,7 +333,7 @@ export class CategorizationEngine {
   }
 
   private matchesRule(
-    transaction: Transaction,
+    _transaction: Transaction,
     rule: CategorizationRule,
     parsed: { amount: number; merchant: string; description: string; date: Date }
   ): boolean {

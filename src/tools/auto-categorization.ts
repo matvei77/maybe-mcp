@@ -1,7 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
+import { MaybeFinanceAPI } from "../services/api-client.js";
 import { CategorizationEngine, SPECIAL_CATEGORIES } from "../services/categorization-engine.js";
 import { parseDate, formatDateForAPI } from "../utils/date-utils.js";
 import { formatCurrency } from "../utils/formatters.js";
