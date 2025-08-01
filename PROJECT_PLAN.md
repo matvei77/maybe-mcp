@@ -131,7 +131,7 @@ This plan outlines the steps to transform the current partial implementation int
 1. **Environment Setup**
    ```bash
    # Create .env file
-   echo "API_BASE_URL=https://maybe.lapushinskii.com/api/v1" > .env
+   echo "API_BASE_URL=https://your-maybe-instance.com/api/v1" > .env
    echo "API_KEY=your-api-key-here" >> .env
    ```
 

@@ -12,3 +12,6 @@ Thumbs.db
 *.swo
 .prisma/
 prisma/migrations/
+test-server.bat
+.claude/
+claude_desktop_config.json

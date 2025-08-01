@@ -86,7 +86,14 @@ export async function handleAccountTools(request: CallToolRequest, apiClient: Ma
       const params = GetAccountBalanceSchema.parse(args);
       
       try {
-        const account = await apiClient.getAccount(params.accountId);
+        // Since the API doesn't support individual account retrieval,
+        // we'll fetch all accounts and find the one we need
+        const accounts = await apiClient.getAccounts();
+        const account = accounts.find(acc => acc.id === params.accountId);
+        
+        if (!account) {
+          throw new Error("Account not found");
+        }
 
         return {
           content: [
@@ -96,6 +103,7 @@ export async function handleAccountTools(request: CallToolRequest, apiClient: Ma
                 accountId: account.id,
                 name: account.name,
                 balance: account.balance,
+                formattedBalance: formatCurrency(account.balance, account.currency),
                 currency: account.currency,
                 classification: account.classification,
                 type: account.account_type,
@@ -105,10 +113,7 @@ export async function handleAccountTools(request: CallToolRequest, apiClient: Ma
         };
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        if (errorMessage.includes('404')) {
-          throw new Error("Account not found");
-        }
-        throw new Error(`Failed to fetch account: ${errorMessage}`);
+        throw new Error(`Failed to fetch account balance: ${errorMessage}`);
       }
     }
 

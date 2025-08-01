@@ -189,9 +189,9 @@ export const ALL_TOOLS: Tool[] = [
           type: "string",
           description: "Transaction date (ISO format or DD-MM-YYYY)",
         },
-        description: {
+        name: {
           type: "string",
-          description: "Transaction description",
+          description: "Transaction name/description",
         },
         category: {
           type: "string",
@@ -211,7 +211,7 @@ export const ALL_TOOLS: Tool[] = [
           description: "Additional notes",
         },
       },
-      required: ["accountId", "amount", "date", "description"],
+      required: ["accountId", "amount", "date", "name"],
     },
   },
   {

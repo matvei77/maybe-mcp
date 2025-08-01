@@ -115,7 +115,15 @@ export class MaybeFinanceAPI {
     notes?: string;
     tags?: string[];
   }): Promise<Transaction> {
-    const result = await this.client.post<any>('/transactions', { transaction: data });
+    // Convert accountId to account_id for the API
+    const { accountId, ...transactionData } = data;
+    const apiData = {
+      transaction: {
+        ...transactionData,
+        account_id: accountId, // Use snake_case for API
+      }
+    };
+    const result = await this.client.post<any>('/transactions', apiData);
     return TransactionSchema.parse(result);
   }
 

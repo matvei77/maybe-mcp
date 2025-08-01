@@ -36,7 +36,7 @@ const config = {
       command: "node",
       args: [path.join(__dirname, 'dist', 'index.js').replace(/\\/g, '\\\\')],
       env: {
-        API_BASE_URL: "https://maybe.lapushinskii.com/api/v1",
+        API_BASE_URL: "https://your-maybe-instance.com/api/v1",
         API_KEY: "your-api-key-here"
       }
     }

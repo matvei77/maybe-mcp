@@ -11,7 +11,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git init:*)",
       "Bash(grep:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)"
     ],
     "deny": []
   }

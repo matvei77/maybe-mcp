@@ -30,7 +30,25 @@ export async function handleCategoryTools(request: CallToolRequest, apiClient: M
 
     if (name === "get_categories") {
       try {
-        const categories = await apiClient.getCategories();
+        // Since the API doesn't have a categories endpoint, we'll return a hardcoded list
+        // of common financial categories plus the special categories
+        const defaultCategories = [
+          { id: "cat_groceries", name: "Groceries", color: "#4CAF50", isSystem: true },
+          { id: "cat_dining", name: "Dining", color: "#FF9800", isSystem: true },
+          { id: "cat_transport", name: "Transportation", color: "#2196F3", isSystem: true },
+          { id: "cat_utilities", name: "Utilities", color: "#9C27B0", isSystem: true },
+          { id: "cat_entertainment", name: "Entertainment", color: "#E91E63", isSystem: true },
+          { id: "cat_healthcare", name: "Healthcare", color: "#00BCD4", isSystem: true },
+          { id: "cat_shopping", name: "Shopping", color: "#FFC107", isSystem: true },
+          { id: "cat_housing", name: "Housing", color: "#795548", isSystem: true },
+          { id: "cat_insurance", name: "Insurance", color: "#607D8B", isSystem: true },
+          { id: "cat_education", name: "Education", color: "#3F51B5", isSystem: true },
+          { id: "cat_personal", name: "Personal Care", color: "#009688", isSystem: true },
+          { id: "cat_travel", name: "Travel", color: "#FF5722", isSystem: true },
+          { id: "cat_savings", name: "Savings", color: "#8BC34A", isSystem: true },
+          { id: "cat_income", name: "Income", color: "#4CAF50", isSystem: true },
+          { id: "cat_other", name: "Other", color: "#757575", isSystem: true },
+        ];
         
         // Add special categories
         const specialCategories = Object.values(SPECIAL_CATEGORIES).map(name => ({
@@ -41,13 +59,15 @@ export async function handleCategoryTools(request: CallToolRequest, apiClient: M
           isSpecial: true,
         }));
 
+        const allCategories = [...defaultCategories, ...specialCategories];
+
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify({
-                categories: [...categories, ...specialCategories],
-                total: categories.length + specialCategories.length,
+                categories: allCategories,
+                total: allCategories.length,
               }, null, 2),
             },
           ],

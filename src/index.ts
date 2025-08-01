@@ -16,11 +16,16 @@ const server = new Server(
 );
 
 // Initialize API client
-const apiBaseUrl = process.env.API_BASE_URL || "https://maybe.lapushinskii.com/api/v1";
+const apiBaseUrl = process.env.API_BASE_URL || "";
 const apiKey = process.env.API_KEY || "";
 
 if (!apiKey) {
   console.error("Error: API_KEY environment variable is required");
+  process.exit(1);
+}
+
+if (!apiBaseUrl) {
+  console.error("Error: API_BASE_URL environment variable is required");
   process.exit(1);
 }
 

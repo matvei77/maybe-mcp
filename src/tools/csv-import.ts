@@ -154,11 +154,15 @@ export async function handleCSVImportTools(request: CallToolRequest, apiClient: 
               continue;
             }
 
-            // Create transaction
-            const created = await apiClient.createTransaction({
-              accountId: params.accountId,
+            // Create transaction - ensure accountId is included
+            const transactionData = {
               ...transaction,
-            });
+              accountId: params.accountId,
+              // Also try with snake_case in case the API expects it
+              account_id: params.accountId,
+            };
+            
+            const created = await apiClient.createTransaction(transactionData);
 
             result.imported++;
             
