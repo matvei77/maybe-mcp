@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:maybe.lapushinskii.com)",
+      "Bash(rmdir:*)",
+      "Bash(rm:*)",
+      "Bash(npm run build:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git init:*)"
+    ],
+    "deny": []
+  }
+}
