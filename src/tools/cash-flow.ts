@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
@@ -22,68 +21,7 @@ const GetCashFlowTrendSchema = z.object({
   accountIds: z.array(IdSchema).optional(),
 });
 
-export function registerCashFlowTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "get_rolling_cash_flow",
-          description: "Get cash flow (inflows/outflows) for the last N days",
-          inputSchema: {
-            type: "object",
-            properties: {
-              days: {
-                type: "number",
-                description: "Number of days to look back (default: 30, max: 365)",
-              },
-              accountIds: {
-                type: "array",
-                items: { type: "string" },
-                description: "Filter by specific account IDs",
-              },
-              excludeTransfers: {
-                type: "boolean",
-                description: "Exclude transfers between accounts",
-              },
-              groupByCategory: {
-                type: "boolean",
-                description: "Group results by category",
-              },
-              groupByAccount: {
-                type: "boolean",
-                description: "Group results by account",
-              },
-            },
-          },
-        },
-        {
-          name: "get_cash_flow_trend",
-          description: "Get cash flow trend over multiple periods",
-          inputSchema: {
-            type: "object",
-            properties: {
-              periods: {
-                type: "number",
-                description: "Number of periods to analyze (default: 6)",
-              },
-              periodType: {
-                type: "string",
-                enum: ["day", "week", "month"],
-                description: "Type of period (default: month)",
-              },
-              accountIds: {
-                type: "array",
-                items: { type: "string" },
-                description: "Filter by specific account IDs",
-              },
-            },
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleCashFlowTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "get_rolling_cash_flow") {
@@ -207,8 +145,114 @@ export function registerCashFlowTools(server: Server, apiClient: MaybeFinanceAPI
       }
     }
 
+    if (name === "get_cash_flow") {
+      // For now, redirect to get_rolling_cash_flow with 30 days default
+      const params = z.object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        accountId: IdSchema.optional(),
+        frequency: z.enum(["daily", "weekly", "monthly"]).optional(),
+      }).parse(args);
+      
+      // Use rolling cash flow for 30 days if no dates specified
+      const days = params.startDate && params.endDate ? 
+        Math.ceil((new Date(params.endDate).getTime() - new Date(params.startDate).getTime()) / (1000 * 60 * 60 * 24)) : 
+        30;
+      
+      return handleCashFlowTools({
+        ...request,
+        params: {
+          ...request.params,
+          name: "get_rolling_cash_flow",
+          arguments: {
+            days,
+            accountIds: params.accountId ? [params.accountId] : undefined,
+          }
+        }
+      }, apiClient);
+    }
+
+    if (name === "forecast_cash_flow") {
+      const params = z.object({
+        days: z.number().int().positive().max(90).default(30),
+        accountId: IdSchema.optional(),
+        includeRecurring: z.boolean().default(true),
+      }).parse(args);
+      
+      try {
+        // Get historical data for analysis (90 days)
+        const startDate = startOfDay(subDays(new Date(), 90));
+        const endDate = endOfDay(new Date());
+        
+        const queryParams: any = {
+          startDate: format(startDate, 'yyyy-MM-dd'),
+          endDate: format(endDate, 'yyyy-MM-dd'),
+          limit: 1000,
+        };
+        
+        if (params.accountId) {
+          queryParams.accountId = params.accountId;
+        }
+        
+        const { transactions } = await apiClient.getTransactions(queryParams);
+        
+        // Calculate average daily cash flow
+        const dailyCashFlows: Record<string, number> = {};
+        transactions.forEach((tx: Transaction) => {
+          const date = format(new Date(tx.date), 'yyyy-MM-dd');
+          const amount = parseAmount(tx.amount);
+          dailyCashFlows[date] = (dailyCashFlows[date] || 0) + amount;
+        });
+        
+        const avgDailyCashFlow = Object.values(dailyCashFlows).reduce((sum, flow) => sum + flow, 0) / Object.keys(dailyCashFlows).length;
+        
+        // Simple linear forecast
+        const forecast = [];
+        let cumulativeCashFlow = 0;
+        for (let i = 1; i <= params.days; i++) {
+          cumulativeCashFlow += avgDailyCashFlow;
+          const forecastDate = new Date();
+          forecastDate.setDate(forecastDate.getDate() + i);
+          
+          forecast.push({
+            date: format(forecastDate, 'yyyy-MM-dd'),
+            expectedCashFlow: avgDailyCashFlow,
+            cumulativeCashFlow,
+            confidence: Math.max(0.5, 1 - (i / params.days) * 0.5), // Confidence decreases over time
+          });
+        }
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                forecast: {
+                  days: params.days,
+                  startDate: format(new Date(), 'yyyy-MM-dd'),
+                  endDate: forecast[forecast.length - 1].date,
+                  avgDailyCashFlow: formatCurrency(avgDailyCashFlow, 'EUR'),
+                  expectedTotalCashFlow: formatCurrency(cumulativeCashFlow, 'EUR'),
+                },
+                dailyForecasts: forecast.slice(0, 7), // Show first week
+                insights: [
+                  avgDailyCashFlow > 0 ? 
+                    `📈 Positive cash flow trend: ${formatCurrency(avgDailyCashFlow, 'EUR')} per day` :
+                    `📉 Negative cash flow trend: ${formatCurrency(avgDailyCashFlow, 'EUR')} per day`,
+                  `💰 Expected balance change in ${params.days} days: ${formatCurrency(cumulativeCashFlow, 'EUR')}`,
+                ],
+                disclaimer: "This is a simple linear forecast based on historical averages. Actual results may vary.",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to forecast cash flow: ${errorMessage}`);
+      }
+    }
+
     throw new Error(`Unknown tool: ${name}`);
-  });
 }
 
 function groupByCategory(transactions: Transaction[]): Record<string, any> {

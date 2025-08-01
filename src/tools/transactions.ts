@@ -1,8 +1,7 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
-import { formatCurrency } from "../utils/formatters.js";
+import { formatCurrency, formatPercentage } from "../utils/formatters.js";
 import { PaginationSchema, IdSchema } from "../utils/validators.js";
 import { parseDate, formatDateForAPI } from "../utils/date-utils.js";
 import { parseAmount } from "../utils/parsers.js";
@@ -28,99 +27,7 @@ const SearchTransactionsSchema = z.object({
   tags: z.array(z.string()).optional(),
 }).merge(PaginationSchema);
 
-export function registerTransactionTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "get_transactions",
-          description: "Get transactions with various filters",
-          inputSchema: {
-            type: "object",
-            properties: {
-              accountId: {
-                type: "string",
-                description: "Filter by account ID",
-              },
-              startDate: {
-                type: "string",
-                description: "Start date (ISO format)",
-              },
-              endDate: {
-                type: "string",
-                description: "End date (ISO format)",
-              },
-              category: {
-                type: "string",
-                description: "Filter by category",
-              },
-              merchant: {
-                type: "string",
-                description: "Filter by merchant name",
-              },
-              tags: {
-                type: "array",
-                items: { type: "string" },
-                description: "Filter by tags",
-              },
-              excludeTransfers: {
-                type: "boolean",
-                description: "Exclude transfers between accounts",
-              },
-              includeExcluded: {
-                type: "boolean",
-                description: "Include excluded transactions",
-              },
-              minAmount: {
-                type: "number",
-                description: "Minimum transaction amount",
-              },
-              maxAmount: {
-                type: "number",
-                description: "Maximum transaction amount",
-              },
-              limit: {
-                type: "number",
-                description: "Number of results to return (max 100)",
-              },
-              offset: {
-                type: "number",
-                description: "Number of results to skip",
-              },
-            },
-          },
-        },
-        {
-          name: "search_transactions",
-          description: "Search transactions by name/description",
-          inputSchema: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "Search query",
-              },
-              accountId: {
-                type: "string",
-                description: "Filter by account ID",
-              },
-              limit: {
-                type: "number",
-                description: "Number of results to return",
-              },
-              offset: {
-                type: "number",
-                description: "Number of results to skip",
-              },
-            },
-            required: ["query"],
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleTransactionTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "get_transactions") {
@@ -233,6 +140,112 @@ export function registerTransactionTools(server: Server, apiClient: MaybeFinance
       }
     }
 
+    if (name === "get_spending_breakdown") {
+      const params = z.object({
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        accountId: IdSchema.optional(),
+        groupBy: z.enum(["category", "merchant", "account"]).default("category"),
+        excludeTransfers: z.boolean().default(true),
+        includeIncome: z.boolean().default(false),
+      }).merge(PaginationSchema).parse(args);
+      
+      try {
+        const apiParams: any = {
+          limit: 1000, // Get more transactions for analysis
+        };
+        
+        if (params.accountId) apiParams.accountId = params.accountId;
+        if (params.startDate) {
+          const date = parseDate(params.startDate);
+          apiParams.startDate = formatDateForAPI(date);
+        }
+        if (params.endDate) {
+          const date = parseDate(params.endDate);
+          apiParams.endDate = formatDateForAPI(date);
+        }
+        
+        const { transactions } = await apiClient.getTransactions(apiParams);
+        
+        // Filter transactions
+        let filtered = transactions;
+        if (params.excludeTransfers) {
+          filtered = filtered.filter((tx: Transaction) => 
+            tx.classification !== 'transfer'
+          );
+        }
+        if (!params.includeIncome) {
+          filtered = filtered.filter((tx: Transaction) => 
+            tx.classification === 'expense'
+          );
+        }
+        
+        // Group by specified field
+        const breakdown: Record<string, { amount: number; count: number; percentage?: number }> = {};
+        let total = 0;
+        
+        filtered.forEach((tx: Transaction) => {
+          const amount = Math.abs(parseAmount(tx.amount));
+          let groupKey = 'Uncategorized';
+          
+          switch (params.groupBy) {
+            case 'category':
+              groupKey = tx.category || 'Uncategorized';
+              break;
+            case 'merchant':
+              groupKey = tx.merchant || tx.name || 'Unknown';
+              break;
+            case 'account':
+              groupKey = tx.account?.name || 'Unknown Account';
+              break;
+          }
+          
+          if (!breakdown[groupKey]) {
+            breakdown[groupKey] = { amount: 0, count: 0 };
+          }
+          
+          breakdown[groupKey].amount += amount;
+          breakdown[groupKey].count += 1;
+          total += amount;
+        });
+        
+        // Calculate percentages and sort
+        const sortedBreakdown = Object.entries(breakdown)
+          .map(([key, value]) => ({
+            [params.groupBy]: key,
+            amount: formatCurrency(value.amount, 'EUR'),
+            count: value.count,
+            percentage: total > 0 ? formatPercentage(value.amount / total) : '0%',
+            _rawAmount: value.amount, // For sorting
+          }))
+          .sort((a, b) => b._rawAmount - a._rawAmount)
+          .map(({ _rawAmount, ...rest }) => rest); // Remove raw amount from output
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                breakdown: sortedBreakdown.slice(0, params.limit || 20),
+                summary: {
+                  total: formatCurrency(total, 'EUR'),
+                  categories: sortedBreakdown.length,
+                  transactions: filtered.length,
+                  groupBy: params.groupBy,
+                  dateRange: {
+                    start: params.startDate || 'All time',
+                    end: params.endDate || 'Present',
+                  },
+                },
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to get spending breakdown: ${errorMessage}`);
+      }
+    }
+
     throw new Error(`Unknown tool: ${name}`);
-  });
 }

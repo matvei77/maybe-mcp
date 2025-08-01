@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import { parseAmount } from "../utils/parsers.js";
@@ -26,59 +25,7 @@ export const SPECIAL_CATEGORIES = {
   SPENDING_BUT_ASSETS: "Spending but Assets"
 };
 
-export function registerCategoryTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "get_categories",
-          description: "Get all available categories",
-          inputSchema: {
-            type: "object",
-            properties: {},
-          },
-        },
-        {
-          name: "categorize_transactions",
-          description: "Manually categorize one or more transactions",
-          inputSchema: {
-            type: "object",
-            properties: {
-              transactionIds: {
-                type: "array",
-                items: { type: "string" },
-                description: "Transaction IDs to categorize",
-              },
-              category: {
-                type: "string",
-                description: "Category name to apply",
-              },
-            },
-            required: ["transactionIds", "category"],
-          },
-        },
-        {
-          name: "get_spending_breakdown",
-          description: "Get spending breakdown by category",
-          inputSchema: {
-            type: "object",
-            properties: {
-              days: {
-                type: "number",
-                description: "Number of days to analyze (default: 30)",
-              },
-              includeAssets: {
-                type: "boolean",
-                description: "Include 'Spending but Assets' in breakdown",
-              },
-            },
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleCategoryTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "get_categories") {
@@ -209,8 +156,46 @@ export function registerCategoryTools(server: Server, apiClient: MaybeFinanceAPI
       }
     }
 
+    if (name === "create_category") {
+      const params = z.object({
+        name: z.string(),
+        parentCategory: z.string().optional(),
+        color: z.string().optional(),
+        icon: z.string().optional(),
+      }).parse(args);
+      
+      try {
+        // For now, return a mock response since the API doesn't support category creation
+        const newCategory = {
+          id: `cat_${Date.now()}`,
+          name: params.name,
+          color: params.color || "#757575",
+          icon: params.icon,
+          parentCategory: params.parentCategory,
+          isSystem: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Category created (client-side only - API doesn't support category creation)",
+                category: newCategory,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to create category: ${errorMessage}`);
+      }
+    }
+
     throw new Error(`Unknown tool: ${name}`);
-  });
 }
 
 function getColorForSpecialCategory(name: string): string {

@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI } from "../services/api-client.js";
 import { IdSchema } from "../utils/validators.js";
@@ -14,42 +13,7 @@ const GetAccountBalanceSchema = z.object({
   accountId: IdSchema,
 });
 
-export function registerAccountTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "get_accounts",
-          description: "Get list of all accounts with their balances",
-          inputSchema: {
-            type: "object",
-            properties: {
-              includeBalance: {
-                type: "boolean",
-                description: "Include current balance (default: true)",
-              },
-            },
-          },
-        },
-        {
-          name: "get_account_balance",
-          description: "Get current balance for a specific account",
-          inputSchema: {
-            type: "object",
-            properties: {
-              accountId: {
-                type: "string",
-                description: "Account ID",
-              },
-            },
-            required: ["accountId"],
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleAccountTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "get_accounts") {
@@ -148,6 +112,5 @@ export function registerAccountTools(server: Server, apiClient: MaybeFinanceAPI)
       }
     }
 
-    throw new Error(`Unknown tool: ${name}`);
-  });
+    throw new Error(`Unknown account tool: ${name}`);
 }

@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI } from "../services/api-client.js";
 import { IdSchema } from "../utils/validators.js";
@@ -33,119 +32,7 @@ const DeleteTransactionSchema = z.object({
   transactionId: IdSchema,
 });
 
-export function registerTransactionManagementTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "create_transaction",
-          description: "Create a new manual transaction entry",
-          inputSchema: {
-            type: "object",
-            properties: {
-              accountId: {
-                type: "string",
-                description: "Account ID for the transaction",
-              },
-              date: {
-                type: "string",
-                description: "Transaction date (YYYY-MM-DD or DD-MM-YYYY)",
-              },
-              amount: {
-                type: "string",
-                description: "Transaction amount (negative for income, positive for expense)",
-              },
-              name: {
-                type: "string",
-                description: "Transaction description",
-              },
-              category: {
-                type: "string",
-                description: "Category name (optional)",
-              },
-              merchant: {
-                type: "string",
-                description: "Merchant name (optional)",
-              },
-              notes: {
-                type: "string",
-                description: "Additional notes (optional)",
-              },
-              tags: {
-                type: "array",
-                items: { type: "string" },
-                description: "Tags for organization (optional)",
-              },
-            },
-            required: ["accountId", "date", "amount", "name"],
-          },
-        },
-        {
-          name: "update_transaction",
-          description: "Update an existing transaction",
-          inputSchema: {
-            type: "object",
-            properties: {
-              transactionId: {
-                type: "string",
-                description: "Transaction ID to update",
-              },
-              category: {
-                type: "string",
-                description: "New category",
-              },
-              excluded: {
-                type: "boolean",
-                description: "Whether to exclude from reports",
-              },
-              name: {
-                type: "string",
-                description: "New transaction name",
-              },
-              amount: {
-                type: "string",
-                description: "New amount",
-              },
-              date: {
-                type: "string",
-                description: "New date",
-              },
-              merchant: {
-                type: "string",
-                description: "New merchant",
-              },
-              notes: {
-                type: "string",
-                description: "New notes",
-              },
-              tags: {
-                type: "array",
-                items: { type: "string" },
-                description: "New tags",
-              },
-            },
-            required: ["transactionId"],
-          },
-        },
-        {
-          name: "delete_transaction",
-          description: "Delete a transaction",
-          inputSchema: {
-            type: "object",
-            properties: {
-              transactionId: {
-                type: "string",
-                description: "Transaction ID to delete",
-              },
-            },
-            required: ["transactionId"],
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleTransactionManagementTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "create_transaction") {
@@ -259,6 +146,78 @@ export function registerTransactionManagementTools(server: Server, apiClient: Ma
       }
     }
 
+    if (name === "categorize_transaction") {
+      const params = z.object({
+        transactionId: IdSchema,
+        category: z.string(),
+      }).parse(args);
+      
+      try {
+        const transaction = await apiClient.updateTransaction(params.transactionId, {
+          category: params.category,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Transaction categorized successfully",
+                transaction: {
+                  id: transaction.id,
+                  name: transaction.name,
+                  category: transaction.category,
+                },
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to categorize transaction: ${errorMessage}`);
+      }
+    }
+
+    if (name === "bulk_categorize") {
+      const params = z.object({
+        transactionIds: z.array(IdSchema),
+        category: z.string(),
+      }).parse(args);
+      
+      try {
+        const results = await Promise.all(
+          params.transactionIds.map(id => 
+            apiClient.updateTransaction(id, { category: params.category })
+              .then(() => ({ id, success: true }))
+              .catch((error) => ({ id, success: false, error: error.message }))
+          )
+        );
+
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                summary: {
+                  total: params.transactionIds.length,
+                  successful,
+                  failed: failed.length,
+                },
+                results,
+                category: params.category,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        throw new Error(`Failed to bulk categorize: ${errorMessage}`);
+      }
+    }
+
     throw new Error(`Unknown tool: ${name}`);
-  });
 }

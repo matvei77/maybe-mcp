@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import Papa from "papaparse";
@@ -48,88 +47,7 @@ interface ImportResult {
   preview?: any[];
 }
 
-export function registerCSVImportTools(server: Server, apiClient: MaybeFinanceAPI) {
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "import_csv",
-          description: "Import transactions from CSV file",
-          inputSchema: {
-            type: "object",
-            properties: {
-              accountId: {
-                type: "string",
-                description: "Account ID to import transactions into",
-              },
-              csvContent: {
-                type: "string",
-                description: "CSV content (UTF-8 or base64 encoded)",
-              },
-              encoding: {
-                type: "string",
-                enum: ["base64", "utf8"],
-                description: "CSV content encoding (default: utf8)",
-              },
-              fieldMapping: {
-                type: "object",
-                description: "Map CSV columns to transaction fields",
-                properties: {
-                  date: { type: "string" },
-                  amount: { type: "string" },
-                  description: { type: "string" },
-                  category: { type: "string" },
-                  merchant: { type: "string" },
-                },
-              },
-              dateFormat: {
-                type: "string",
-                description: "Date format hint (e.g., 'DD-MM-YYYY')",
-              },
-              skipDuplicates: {
-                type: "boolean",
-                description: "Skip duplicate transactions (default: true)",
-              },
-              autoCategarize: {
-                type: "boolean",
-                description: "Auto-categorize imported transactions",
-              },
-              dryRun: {
-                type: "boolean",
-                description: "Preview import without creating transactions",
-              },
-            },
-            required: ["accountId", "csvContent"],
-          },
-        },
-        {
-          name: "analyze_csv",
-          description: "Analyze CSV structure and suggest field mappings",
-          inputSchema: {
-            type: "object",
-            properties: {
-              csvContent: {
-                type: "string",
-                description: "CSV content to analyze",
-              },
-              encoding: {
-                type: "string",
-                enum: ["base64", "utf8"],
-                description: "CSV content encoding",
-              },
-              sampleRows: {
-                type: "number",
-                description: "Number of sample rows to return",
-              },
-            },
-            required: ["csvContent"],
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+export async function handleCSVImportTools(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
     const { name, arguments: args } = request.params;
 
     if (name === "analyze_csv") {
@@ -276,7 +194,6 @@ export function registerCSVImportTools(server: Server, apiClient: MaybeFinanceAP
     }
 
     throw new Error(`Unknown tool: ${name}`);
-  });
 }
 
 function detectFieldMapping(headers: string[], sampleData: CSVRow[]): any {

@@ -9,7 +9,9 @@
       "Bash(rm:*)",
       "Bash(npm run build:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(grep:*)",
+      "Bash(findstr:*)"
     ],
     "deny": []
   }

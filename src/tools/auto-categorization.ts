@@ -1,5 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI } from "../services/api-client.js";
 import { CategorizationEngine, SPECIAL_CATEGORIES } from "../services/categorization-engine.js";
@@ -40,125 +39,11 @@ const ManageCategoryRulesSchema = z.object({
   }).optional(),
 });
 
-export function registerAutoCategorization(server: Server, apiClient: MaybeFinanceAPI) {
+export async function handleAutoCategorization(request: CallToolRequest, apiClient: MaybeFinanceAPI) {
   const engine = new CategorizationEngine();
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: "auto_categorize",
-          description: "Automatically categorize transactions using smart rules",
-          inputSchema: {
-            type: "object",
-            properties: {
-              startDate: {
-                type: "string",
-                description: "Start date for transactions to categorize",
-              },
-              endDate: {
-                type: "string",
-                description: "End date for transactions to categorize",
-              },
-              accountIds: {
-                type: "array",
-                items: { type: "string" },
-                description: "Filter by specific accounts",
-              },
-              onlyUncategorized: {
-                type: "boolean",
-                description: "Only process uncategorized transactions (default: true)",
-              },
-              dryRun: {
-                type: "boolean",
-                description: "Preview categorization without applying changes",
-              },
-              limit: {
-                type: "number",
-                description: "Maximum transactions to process (default: 100)",
-              },
-            },
-          },
-        },
-        {
-          name: "detect_subscriptions",
-          description: "Detect recurring subscriptions in your transactions",
-          inputSchema: {
-            type: "object",
-            properties: {
-              lookbackDays: {
-                type: "number",
-                description: "Days to look back for patterns (default: 90)",
-              },
-              accountIds: {
-                type: "array",
-                items: { type: "string" },
-                description: "Filter by specific accounts",
-              },
-              includeExpected: {
-                type: "boolean",
-                description: "Include expected next payment dates",
-              },
-            },
-          },
-        },
-        {
-          name: "manage_category_rules",
-          description: "Manage custom categorization rules",
-          inputSchema: {
-            type: "object",
-            properties: {
-              action: {
-                type: "string",
-                enum: ["list", "add", "remove"],
-                description: "Action to perform",
-              },
-              ruleId: {
-                type: "string",
-                description: "Rule ID (for remove action)",
-              },
-              rule: {
-                type: "object",
-                description: "Rule definition (for add action)",
-                properties: {
-                  id: { type: "string" },
-                  name: { type: "string" },
-                  category: { type: "string" },
-                  priority: { type: "number" },
-                  conditions: {
-                    type: "object",
-                    properties: {
-                      merchantPatterns: {
-                        type: "array",
-                        items: { type: "string" },
-                      },
-                      descriptionPatterns: {
-                        type: "array",
-                        items: { type: "string" },
-                      },
-                      amountRange: {
-                        type: "object",
-                        properties: {
-                          min: { type: "number" },
-                          max: { type: "number" },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            required: ["action"],
-          },
-        },
-      ],
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
-    if (name === "auto_categorize") {
+    if (name === "auto_categorize_all") {
       const params = AutoCategorizeSchema.parse(args);
       
       try {
@@ -340,11 +225,12 @@ export function registerAutoCategorization(server: Server, apiClient: MaybeFinan
       }
     }
 
-    if (name === "manage_category_rules") {
-      const params = ManageCategoryRulesSchema.parse(args);
+    if (name === "get_categorization_rules") {
+      // Default to 'list' action if not specified
+      const params = ManageCategoryRulesSchema.parse({ action: 'list', ...args });
       
       try {
-        if (params.action === 'list') {
+        if (params.action === 'list' || !params.action) {
           const rules = engine.getRules();
           const formattedRules = rules.map(rule => ({
             id: rule.id,
@@ -427,5 +313,4 @@ export function registerAutoCategorization(server: Server, apiClient: MaybeFinan
     }
 
     throw new Error(`Unknown tool: ${name}`);
-  });
 }
