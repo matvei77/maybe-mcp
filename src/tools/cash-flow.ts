@@ -3,21 +3,23 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
-import { formatCurrency } from "../utils/formatters.js";
-import { parseAmount } from "../utils/parsers.js";
+import { formatCurrency, formatDate, formatPercentage } from "../utils/formatters.js";
+import { parseAmount, getAccountId } from "../utils/parsers.js";
+import { IdSchema } from "../utils/validators.js";
 
 const GetRollingCashFlowSchema = z.object({
   days: z.number().int().positive().max(365).default(30),
-  accountIds: z.array(z.string().uuid()).optional(),
+  accountIds: z.array(IdSchema).optional(),
   excludeTransfers: z.boolean().default(true),
   groupByCategory: z.boolean().default(false),
   groupByAccount: z.boolean().default(false),
+  includeInsights: z.boolean().default(true),
 });
 
 const GetCashFlowTrendSchema = z.object({
   periods: z.number().int().positive().max(12).default(6),
   periodType: z.enum(["day", "week", "month"]).default("month"),
-  accountIds: z.array(z.string().uuid()).optional(),
+  accountIds: z.array(IdSchema).optional(),
 });
 
 export function registerCashFlowTools(server: Server, apiClient: MaybeFinanceAPI) {
@@ -96,12 +98,26 @@ export function registerCashFlowTools(server: Server, apiClient: MaybeFinanceAPI
           endDate: endDate.toISOString(),
         });
 
+        // Filter by accounts if specified
+        let filtered = transactions;
+        if (params.accountIds && params.accountIds.length > 0) {
+          filtered = transactions.filter((t: Transaction) => {
+            const accountId = getAccountId(t);
+            return params.accountIds!.includes(accountId);
+          });
+        }
+        
+        // Exclude transfers if requested
+        if (params.excludeTransfers) {
+          filtered = await excludeTransfers(filtered);
+        }
+
         // Parse amounts and classify based on classification field
-        const inflows = transactions
+        const inflows = filtered
           .filter((t: Transaction) => t.classification === 'income')
           .reduce((sum: number, t: Transaction) => sum + parseAmount(t.amount), 0);
           
-        const outflows = transactions
+        const outflows = filtered
           .filter((t: Transaction) => t.classification === 'expense')
           .reduce((sum: number, t: Transaction) => sum + parseAmount(t.amount), 0);
         
@@ -122,14 +138,27 @@ export function registerCashFlowTools(server: Server, apiClient: MaybeFinanceAPI
             avgDailyNet: formatCurrency(netFlow / params.days),
           },
           transactionCount: {
-            total: transactions.length,
-            inflows: transactions.filter((t: Transaction) => t.classification === 'income').length,
-            outflows: transactions.filter((t: Transaction) => t.classification === 'expense').length,
+            total: filtered.length,
+            filtered: transactions.length - filtered.length,
+            inflows: filtered.filter((t: Transaction) => t.classification === 'income').length,
+            outflows: filtered.filter((t: Transaction) => t.classification === 'expense').length,
           },
         };
 
         if (params.groupByCategory) {
-          result.breakdown = { byCategory: groupByCategory(transactions) };
+          result.breakdown = { byCategory: groupByCategory(filtered) };
+        }
+        
+        if (params.groupByAccount) {
+          result.breakdown = { ...result.breakdown, byAccount: groupByAccount(filtered) };
+        }
+        
+        if (params.includeInsights) {
+          result.insights = generateInsights(filtered, {
+            netFlow,
+            days: params.days,
+            avgDailyOutflow: outflows / params.days,
+          });
         }
 
         return {
@@ -211,6 +240,37 @@ function groupByCategory(transactions: Transaction[]): Record<string, any> {
   return result;
 }
 
+function groupByAccount(transactions: Transaction[]): Record<string, any> {
+  const groups: Record<string, { inflows: number; outflows: number; transactions: number }> = {};
+  
+  transactions.forEach((tx: Transaction) => {
+    const accountName = tx.account?.name || 'Unknown Account';
+    if (!groups[accountName]) {
+      groups[accountName] = { inflows: 0, outflows: 0, transactions: 0 };
+    }
+    
+    const amount = parseAmount(tx.amount);
+    if (tx.classification === 'income') {
+      groups[accountName].inflows += amount;
+    } else if (tx.classification === 'expense') {
+      groups[accountName].outflows += amount;
+    }
+    groups[accountName].transactions++;
+  });
+  
+  const result: Record<string, any> = {};
+  Object.entries(groups).forEach(([account, values]) => {
+    result[account] = {
+      inflows: formatCurrency(values.inflows),
+      outflows: formatCurrency(values.outflows),
+      net: formatCurrency(values.inflows - values.outflows),
+      transactionCount: values.transactions,
+    };
+  });
+  
+  return result;
+}
+
 async function calculatePeriodFlows(
   apiClient: MaybeFinanceAPI,
   params: z.infer<typeof GetCashFlowTrendSchema>
@@ -277,4 +337,77 @@ function calculateTrend(periods: Array<{ net: number }>): string {
   if (change > 10) return "improving";
   if (change < -10) return "declining";
   return "stable";
+}
+
+async function excludeTransfers(transactions: Transaction[]): Promise<Transaction[]> {
+  // Identify potential transfers by matching amounts on same day
+  const transferIds = new Set<string>();
+  
+  for (let i = 0; i < transactions.length; i++) {
+    for (let j = i + 1; j < transactions.length; j++) {
+      const tx1 = transactions[i];
+      const tx2 = transactions[j];
+      
+      // Same day, opposite classifications, similar amounts
+      if (tx1.date === tx2.date) {
+        const amount1 = parseAmount(tx1.amount);
+        const amount2 = parseAmount(tx2.amount);
+        
+        // Check if one is income and other is expense with same amount
+        if ((tx1.classification === 'income' && tx2.classification === 'expense') ||
+            (tx1.classification === 'expense' && tx2.classification === 'income')) {
+          if (Math.abs(Math.abs(amount1) - Math.abs(amount2)) < 0.01) {
+            transferIds.add(tx1.id);
+            transferIds.add(tx2.id);
+          }
+        }
+      }
+    }
+  }
+  
+  return transactions.filter(tx => !transferIds.has(tx.id));
+}
+
+function generateInsights(transactions: Transaction[], metrics: any): string[] {
+  const insights: string[] = [];
+  
+  // Net flow insight
+  if (metrics.netFlow < 0) {
+    insights.push(`⚠️ Negative cash flow: spending exceeds income by ${formatCurrency(Math.abs(metrics.netFlow))}`);
+  } else if (metrics.netFlow > 0) {
+    insights.push(`✅ Positive cash flow: ${formatCurrency(metrics.netFlow)} surplus`);
+  }
+  
+  // Daily average insight
+  const avgDaily = metrics.netFlow / metrics.days;
+  if (avgDaily < -50) {
+    insights.push(`📉 Average daily deficit: ${formatCurrency(Math.abs(avgDaily))}`);
+  } else if (avgDaily > 50) {
+    insights.push(`📈 Average daily surplus: ${formatCurrency(avgDaily)}`);
+  }
+  
+  // Large transactions
+  const largeThreshold = metrics.avgDailyOutflow * 3;
+  const largeTransactions = transactions.filter(tx => 
+    Math.abs(parseAmount(tx.amount)) > largeThreshold
+  );
+  if (largeTransactions.length > 0) {
+    insights.push(`💸 ${largeTransactions.length} large transactions detected (>${formatCurrency(largeThreshold)})`);
+  }
+  
+  // Weekend spending
+  const weekendTransactions = transactions.filter(tx => {
+    const date = new Date(tx.date);
+    const day = date.getDay();
+    return day === 0 || day === 6; // Sunday or Saturday
+  });
+  const weekendSpending = weekendTransactions
+    .filter(tx => tx.classification === 'expense')
+    .reduce((sum, tx) => sum + parseAmount(tx.amount), 0);
+  const weekendAvg = weekendSpending / (metrics.days / 7 * 2); // Approximate weekends
+  if (weekendAvg > metrics.avgDailyOutflow * 1.5) {
+    insights.push(`🎉 Weekend spending is ${formatPercentage((weekendAvg / metrics.avgDailyOutflow) - 1)} higher than daily average`);
+  }
+  
+  return insights;
 }

@@ -2,13 +2,16 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI } from "../services/api-client.js";
+import { IdSchema } from "../utils/validators.js";
+import { formatCurrency } from "../utils/formatters.js";
 
 const GetAccountsSchema = z.object({
   includeBalance: z.boolean().default(true),
+  groupByType: z.boolean().default(false),
 });
 
 const GetAccountBalanceSchema = z.object({
-  accountId: z.string().uuid(),
+  accountId: IdSchema,
 });
 
 export function registerAccountTools(server: Server, apiClient: MaybeFinanceAPI) {
@@ -61,14 +64,51 @@ export function registerAccountTools(server: Server, apiClient: MaybeFinanceAPI)
           type: account.account_type,
           classification: account.classification,
           balance: params.includeBalance ? account.balance : undefined,
+          formattedBalance: params.includeBalance ? 
+            formatCurrency(account.balance, account.currency) : undefined,
           currency: account.currency,
         }));
+        
+        // Calculate net worth if balances included
+        let netWorth = null;
+        if (params.includeBalance) {
+          // Group accounts by currency
+          const byCurrency: Record<string, number> = {};
+          accounts.forEach(account => {
+            const currency = account.currency || 'EUR';
+            const amount = parseFloat(account.balance);
+            byCurrency[currency] = (byCurrency[currency] || 0) + amount;
+          });
+          
+          netWorth = Object.entries(byCurrency).map(([currency, total]) => ({
+            currency,
+            amount: total,
+            formatted: formatCurrency(total, currency)
+          }));
+        }
+        
+        // Group by type if requested
+        let grouped = null;
+        if (params.groupByType) {
+          grouped = formattedAccounts.reduce((acc, account) => {
+            const type = account.type || 'Other';
+            if (!acc[type]) acc[type] = [];
+            acc[type].push(account);
+            return acc;
+          }, {} as Record<string, any[]>);
+        }
 
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(formattedAccounts, null, 2),
+              text: JSON.stringify({
+                accounts: params.groupByType ? grouped : formattedAccounts,
+                summary: {
+                  totalAccounts: accounts.length,
+                  netWorth: netWorth,
+                },
+              }, null, 2),
             },
           ],
         };

@@ -5,6 +5,8 @@ import { registerTransactionTools } from "./transactions.js";
 import { registerTransactionManagementTools } from "./transaction-management.js";
 import { registerCashFlowTools } from "./cash-flow.js";
 import { registerCategoryTools } from "./categories.js";
+import { registerCSVImportTools } from "./csv-import.js";
+import { registerAutoCategorization } from "./auto-categorization.js";
 
 export function registerTools(server: Server, apiClient: MaybeFinanceAPI) {
   registerAccountTools(server, apiClient);
@@ -12,4 +14,6 @@ export function registerTools(server: Server, apiClient: MaybeFinanceAPI) {
   registerTransactionManagementTools(server, apiClient);
   registerCashFlowTools(server, apiClient);
   registerCategoryTools(server, apiClient);
+  registerCSVImportTools(server, apiClient);
+  registerAutoCategorization(server, apiClient);
 }

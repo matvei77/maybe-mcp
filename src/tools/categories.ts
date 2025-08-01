@@ -3,11 +3,13 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
 import { parseAmount } from "../utils/parsers.js";
+import { IdSchema } from "../utils/validators.js";
+import { formatCurrency, formatPercentage } from "../utils/formatters.js";
 
 // const GetCategoriesSchema = z.object({});
 
 const CategorizeTransactionsSchema = z.object({
-  transactionIds: z.array(z.string().uuid()),
+  transactionIds: z.array(IdSchema),
   category: z.string(),
 });
 
@@ -184,10 +186,8 @@ export function registerCategoryTools(server: Server, apiClient: MaybeFinanceAPI
             category,
             amount,
             percentage: (amount / total) * 100,
-            formatted: new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'EUR',
-            }).format(amount),
+            formatted: formatCurrency(amount, 'EUR'),
+            formattedPercentage: formatPercentage(amount / total),
           }));
 
         return {
@@ -196,10 +196,7 @@ export function registerCategoryTools(server: Server, apiClient: MaybeFinanceAPI
               type: "text",
               text: JSON.stringify({
                 period: `${params.days} days`,
-                total: new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency: 'EUR',
-                }).format(total),
+                total: formatCurrency(total, 'EUR'),
                 breakdown: formattedBreakdown,
                 uncategorizedCount: expenses.filter((tx: Transaction) => !tx.category).length,
               }, null, 2),

@@ -2,11 +2,13 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI, Transaction } from "../services/api-client.js";
-import { formatCurrency } from "../utils/formatters.js";
-import { PaginationSchema } from "../utils/validators.js";
+import { formatCurrency, formatDate } from "../utils/formatters.js";
+import { PaginationSchema, IdSchema } from "../utils/validators.js";
+import { parseDate, formatDateForAPI } from "../utils/date-utils.js";
+import { parseAmount, getAccountId } from "../utils/parsers.js";
 
 const GetTransactionsSchema = z.object({
-  accountId: z.string().uuid().optional(),
+  accountId: IdSchema.optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   category: z.string().optional(),
@@ -20,7 +22,7 @@ const GetTransactionsSchema = z.object({
 
 const SearchTransactionsSchema = z.object({
   query: z.string().min(1),
-  accountId: z.string().uuid().optional(),
+  accountId: IdSchema.optional(),
   category: z.string().optional(),
   merchant: z.string().optional(),
   tags: z.array(z.string()).optional(),
@@ -131,8 +133,14 @@ export function registerTransactionTools(server: Server, apiClient: MaybeFinance
         };
         
         if (params.accountId) apiParams.accountId = params.accountId;
-        if (params.startDate) apiParams.startDate = params.startDate;
-        if (params.endDate) apiParams.endDate = params.endDate;
+        if (params.startDate) {
+          const date = parseDate(params.startDate);
+          apiParams.startDate = formatDateForAPI(date);
+        }
+        if (params.endDate) {
+          const date = parseDate(params.endDate);
+          apiParams.endDate = formatDateForAPI(date);
+        }
         if (params.category) apiParams.category = params.category;
         if (params.merchant) apiParams.merchant = params.merchant;
         if (params.tags) apiParams.tags = params.tags;

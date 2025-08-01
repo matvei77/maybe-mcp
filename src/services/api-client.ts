@@ -1,5 +1,5 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
 import { z } from 'zod';
+import { EnhancedMaybeFinanceAPI } from './enhanced-api-client.js';
 
 // API Response schemas
 export const AccountSchema = z.object({
@@ -47,45 +47,26 @@ export type Transaction = z.infer<typeof TransactionSchema>;
 export type Category = z.infer<typeof CategorySchema>;
 
 export class MaybeFinanceAPI {
-  private client: AxiosInstance;
+  private client: EnhancedMaybeFinanceAPI;
 
   constructor(baseURL: string, apiKey: string) {
-    this.client = axios.create({
-      baseURL,
-      headers: {
-        'X-Api-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
+    this.client = new EnhancedMaybeFinanceAPI(baseURL, apiKey, {
+      rateLimitPerMinute: 100,
+      cacheTTLSeconds: 300,
       timeout: 30000,
     });
-
-    // Add response interceptor for error handling
-    this.client.interceptors.response.use(
-      (response) => response,
-      (error: AxiosError) => {
-        if (error.response) {
-          const data = error.response.data as any;
-          const message = data?.message || error.message;
-          throw new Error(`API Error ${error.response.status}: ${message}`);
-        } else if (error.request) {
-          throw new Error('No response from API server');
-        } else {
-          throw new Error(`Request failed: ${error.message}`);
-        }
-      }
-    );
   }
 
   // Account endpoints
   async getAccounts(): Promise<Account[]> {
-    const response = await this.client.get('/accounts');
-    const data = response.data.accounts || response.data;
-    return z.array(AccountSchema).parse(data);
+    const data = await this.client.get<any>('/accounts');
+    const accounts = data.accounts || data;
+    return z.array(AccountSchema).parse(accounts);
   }
 
   async getAccount(id: string): Promise<Account> {
-    const response = await this.client.get(`/accounts/${id}`);
-    return AccountSchema.parse(response.data);
+    const data = await this.client.get<any>(`/accounts/${id}`);
+    return AccountSchema.parse(data);
   }
 
   // Transaction endpoints
@@ -97,10 +78,10 @@ export class MaybeFinanceAPI {
     limit?: number;
     offset?: number;
   }): Promise<{ transactions: Transaction[]; total: number }> {
-    const response = await this.client.get('/transactions', { params });
+    const data = await this.client.get<any>('/transactions', { params });
     return {
-      transactions: z.array(TransactionSchema).parse(response.data.transactions || response.data),
-      total: response.data.total || response.data.length || 0,
+      transactions: z.array(TransactionSchema).parse(data.transactions || data),
+      total: data.total || data.length || 0,
     };
   }
 
@@ -110,18 +91,18 @@ export class MaybeFinanceAPI {
     merchant?: string;
     tags?: string[];
   }): Promise<{ transactions: Transaction[]; total: number }> {
-    const response = await this.client.get('/transactions', {
+    const data = await this.client.get<any>('/transactions', {
       params: { search: query, ...filters },
     });
     return {
-      transactions: z.array(TransactionSchema).parse(response.data.transactions || response.data),
-      total: response.data.total || response.data.length || 0,
+      transactions: z.array(TransactionSchema).parse(data.transactions || data),
+      total: data.total || data.length || 0,
     };
   }
 
   async getTransaction(id: string): Promise<Transaction> {
-    const response = await this.client.get(`/transactions/${id}`);
-    return TransactionSchema.parse(response.data);
+    const data = await this.client.get<any>(`/transactions/${id}`);
+    return TransactionSchema.parse(data);
   }
 
   async createTransaction(data: {
@@ -134,8 +115,8 @@ export class MaybeFinanceAPI {
     notes?: string;
     tags?: string[];
   }): Promise<Transaction> {
-    const response = await this.client.post('/transactions', { transaction: data });
-    return TransactionSchema.parse(response.data);
+    const result = await this.client.post<any>('/transactions', { transaction: data });
+    return TransactionSchema.parse(result);
   }
 
   async updateTransaction(id: string, data: {
@@ -148,49 +129,45 @@ export class MaybeFinanceAPI {
     notes?: string;
     tags?: string[];
   }): Promise<Transaction> {
-    const response = await this.client.put(`/transactions/${id}`, { transaction: data });
-    return TransactionSchema.parse(response.data);
+    const result = await this.client.put<any>(`/transactions/${id}`, { transaction: data });
+    return TransactionSchema.parse(result);
   }
 
   async deleteTransaction(id: string): Promise<void> {
-    await this.client.delete(`/transactions/${id}`);
+    await this.client.delete<void>(`/transactions/${id}`);
   }
 
   // Category endpoints
   async getCategories(): Promise<Category[]> {
-    const response = await this.client.get('/categories');
-    return z.array(CategorySchema).parse(response.data);
+    const data = await this.client.get<any>('/categories');
+    return z.array(CategorySchema).parse(data);
   }
 
   // AI Chat endpoints
   async getChats(page: number = 1): Promise<{ chats: any[]; pagination: any }> {
-    const response = await this.client.get('/chats', { params: { page } });
-    return response.data;
+    return await this.client.get<any>('/chats', { params: { page } });
   }
 
   async createChat(title?: string, initialMessage?: string): Promise<any> {
-    const response = await this.client.post('/chats', {
+    return await this.client.post<any>('/chats', {
       chat: { title },
       message: initialMessage ? { content: initialMessage } : undefined,
     });
-    return response.data;
   }
 
   async sendChatMessage(chatId: string, content: string): Promise<any> {
-    const response = await this.client.post(`/chats/${chatId}/messages`, {
+    return await this.client.post<any>(`/chats/${chatId}/messages`, {
       message: { content },
     });
-    return response.data;
   }
 
   async deleteChat(chatId: string): Promise<void> {
-    await this.client.delete(`/chats/${chatId}`);
+    await this.client.delete<void>(`/chats/${chatId}`);
   }
 
   // Usage tracking
   async getUsage(): Promise<any> {
-    const response = await this.client.get('/usage');
-    return response.data;
+    return await this.client.get<any>('/usage');
   }
 
   // Analytics endpoints (may need custom implementation on server)

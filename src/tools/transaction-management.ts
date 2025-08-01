@@ -2,9 +2,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MaybeFinanceAPI } from "../services/api-client.js";
+import { IdSchema } from "../utils/validators.js";
+import { parseDate, formatDateForAPI } from "../utils/date-utils.js";
+import { parseAmount } from "../utils/parsers.js";
 
 const CreateTransactionSchema = z.object({
-  accountId: z.string().uuid(),
+  accountId: IdSchema,
   date: z.string(),
   amount: z.string(),
   name: z.string(),
@@ -15,7 +18,7 @@ const CreateTransactionSchema = z.object({
 });
 
 const UpdateTransactionSchema = z.object({
-  transactionId: z.string().uuid(),
+  transactionId: IdSchema,
   category: z.string().optional(),
   excluded: z.boolean().optional(),
   name: z.string().optional(),
@@ -27,7 +30,7 @@ const UpdateTransactionSchema = z.object({
 });
 
 const DeleteTransactionSchema = z.object({
-  transactionId: z.string().uuid(),
+  transactionId: IdSchema,
 });
 
 export function registerTransactionManagementTools(server: Server, apiClient: MaybeFinanceAPI) {
@@ -149,16 +152,17 @@ export function registerTransactionManagementTools(server: Server, apiClient: Ma
       const params = CreateTransactionSchema.parse(args);
       
       try {
-        // Convert date format from DD-MM-YYYY to YYYY-MM-DD if needed
-        let formattedDate = params.date;
-        if (params.date.match(/^\d{2}-\d{2}-\d{4}$/)) {
-          const [day, month, year] = params.date.split('-');
-          formattedDate = `${year}-${month}-${day}`;
-        }
+        // Parse date using robust date parser
+        const parsedDate = parseDate(params.date);
+        const formattedDate = formatDateForAPI(parsedDate);
+        
+        // Validate amount
+        const parsedAmount = parseAmount(params.amount);
 
         const transaction = await apiClient.createTransaction({
           ...params,
           date: formattedDate,
+          amount: parsedAmount.toString(),
         });
 
         return {
@@ -193,9 +197,14 @@ export function registerTransactionManagementTools(server: Server, apiClient: Ma
         // Convert date format if provided
         const { transactionId, ...updateData } = params;
         
-        if (updateData.date && updateData.date.match(/^\d{2}-\d{2}-\d{4}$/)) {
-          const [day, month, year] = updateData.date.split('-');
-          updateData.date = `${year}-${month}-${day}`;
+        if (updateData.date) {
+          const parsedDate = parseDate(updateData.date);
+          updateData.date = formatDateForAPI(parsedDate);
+        }
+        
+        if (updateData.amount) {
+          const parsedAmount = parseAmount(updateData.amount);
+          updateData.amount = parsedAmount.toString();
         }
 
         const transaction = await apiClient.updateTransaction(params.transactionId, updateData);
